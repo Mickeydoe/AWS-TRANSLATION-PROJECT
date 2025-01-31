@@ -1,17 +1,17 @@
-import boto3
+import boto3 
 import json
 import uuid
 from datetime import datetime, timezone
 
 # AWS resource configurations
-translate_client = boto3.client('translate', region_name='us-east-1')  # Adjust region
-s3_client = boto3.client('s3')
+translate_client = boto3.client('translate', region_name='us-east-1')  #Create client for AWS translate
+s3_client = boto3.client('s3') #creates a client for amazon s3 which allows interacting with S3 buckets
 
-# S3 bucket names
-REQUEST_BUCKET = "translation-request-bucket"  # Replace with your bucket name
-RESPONSE_BUCKET = "response-and-logs-store-bucket"  # Replace with your bucket name
+# S3 bucket names on AWS
+REQUEST_BUCKET = "translation-request-bucket"  #Bucket for storing translation request
+RESPONSE_BUCKET = "response-and-logs-store-bucket"  #Bucket for storing translation response
 
-def upload_to_s3(bucket_name, file_name, data):
+def upload_to_s3(bucket_name, file_name, data): #function that uploads JSON file to s3 bucket
     """Upload a file to an S3 bucket."""
     try:
         s3_client.put_object(
