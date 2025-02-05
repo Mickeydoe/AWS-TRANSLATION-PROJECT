@@ -1,18 +1,17 @@
-import boto3 
+import boto3
 import json
-import uuid
-from datetime import datetime, timezone
+import os
 
-# AWS resource configurations
-translate_client = boto3.client('translate', region_name='us-east-1')  #Create client for AWS translate
-s3_client = boto3.client('s3') #creates a client for amazon s3 which allows interacting with S3 buckets
+# AWS Clients
+s3_client = boto3.client('s3')
+translate_client = boto3.client('translate')
 
-# S3 bucket names on AWS
-REQUEST_BUCKET = "translation-request-bucket"  #Bucket for storing translation request
-RESPONSE_BUCKET = "response-and-logs-store-bucket"  #Bucket for storing translation response
+# Environment variables (set in Terraform)
+REQUEST_BUCKET = os.environ['REQUEST_BUCKET']
+RESPONSE_BUCKET = os.environ['RESPONSE_BUCKET']
 
-def upload_to_s3(bucket_name, file_name, data): #function that uploads JSON file to s3 bucket
-    """Upload a file to an S3 bucket."""
+def upload_to_s3(bucket_name, file_name, data):
+    """Uploads a JSON file to an S3 bucket."""
     try:
         s3_client.put_object(
             Bucket=bucket_name,
@@ -21,61 +20,56 @@ def upload_to_s3(bucket_name, file_name, data): #function that uploads JSON file
             ContentType="application/json"
         )
         print(f"Uploaded {file_name} to {bucket_name}.")
-    except s3_client.exceptions.NoSuchBucket:
-        print(f"Error: Bucket '{bucket_name}' does not exist. Please create it before running the script.")
-        exit(1)
+    except Exception as e:
+        print(f"Error uploading to S3: {str(e)}")
 
 def translate_text(source_language, target_language, text):
-    """Perform translation using AWS Translate."""
+    """Performs translation using AWS Translate."""
     response = translate_client.translate_text(
         Text=text,
         SourceLanguageCode=source_language,
         TargetLanguageCode=target_language
     )
-    return response
+    return response["TranslatedText"]
 
-def main():
-    print("=== AWS Translate Script ===")
+def lambda_handler(event, context):
+    """AWS Lambda function to process S3 translation requests."""
+    try:
+        # Extract file information from S3 event
+        record = event['Records'][0]
+        bucket_name = record['s3']['bucket']['name']
+        object_key = record['s3']['object']['key']
 
-    # Get user input
-    source_language = input("Enter source language code (e.g., 'en' for English): ").strip()
-    target_language = input("Enter target language code (e.g., 'es' for Spanish): ").strip()
-    text = input("Enter text to translate: ").strip()
+        # Retrieve file from S3
+        response = s3_client.get_object(Bucket=bucket_name, Key=object_key)
+        content = json.loads(response['Body'].read().decode('utf-8'))
 
-    # Generate a unique request ID
-    request_id = str(uuid.uuid4())
+        # Extract translation details
+        source_language = content["source_language"]
+        target_language = content["target_language"]
+        text = content["text"]
 
-    # Log the request data
-    request_data = {
-        "request_id": request_id,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "source_language": source_language,
-        "target_language": target_language,
-        "text": text
-    }
-    request_file_name = f"translation_request_{request_id}.json"
-    upload_to_s3(REQUEST_BUCKET, request_file_name, request_data)
+        # Perform the translation
+        print(f"Translating from {source_language} to {target_language}: {text}")
+        translated_text = translate_text(source_language, target_language, text)
 
-    # Perform the translation
-    print("Translating text...")
-    translation_response = translate_text(source_language, target_language, text)
+        # Prepare response data
+        response_data = {
+            "request_id": object_key,  # Using filename as unique request ID
+            "source_language": source_language,
+            "target_language": target_language,
+            "original_text": text,
+            "translated_text": translated_text
+        }
 
-    # Log the response data
-    response_data = {
-        "request_id": request_id,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "source_language": source_language,
-        "target_language": target_language,
-        "original_text": text,
-        "translated_text": translation_response["TranslatedText"]
-    }
-    response_file_name = f"translation_response_{request_id}.json"
-    upload_to_s3(RESPONSE_BUCKET, response_file_name, response_data)
+        # Save response to S3
+        response_file_name = object_key.replace("request", "response")  # Naming translated response
+        upload_to_s3(RESPONSE_BUCKET, response_file_name, response_data)
 
-    # Print results
-    print("Translation completed!")
-    print(f"Original Text: {text}")
-    print(f"Translated Text: {translation_response['TranslatedText']}")
+        print("Translation completed successfully.")
+        return {"statusCode": 200, "body": json.dumps("Translation completed")}
 
-if __name__ == "__main__":
-    main()
+    except Exception as e:
+        print(f"Error processing translation: {str(e)}")
+        return {"statusCode": 500, "body": json.dumps("Translation failed")}
+

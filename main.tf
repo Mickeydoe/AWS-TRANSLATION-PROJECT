@@ -1,20 +1,24 @@
 terraform {
   required_providers {
     aws = {
-      source = "hashicorp/aws"
+      source  = "hashicorp/aws"
       version = "5.84.0"
     }
   }
 }
+
 provider "aws" {
-  region  = "us-east-1"
+  region = "us-east-1"
 }
 
+# ---------------------------------
+# 1. CREATE S3 BUCKETS
+# ---------------------------------
 resource "aws_s3_bucket" "request_store" {
   bucket = "translation-request-bucket"
 
   tags = {
-    Name        = "translation_request_store"
+    Name = "translation_request_store"
   }
 }
 
@@ -22,11 +26,13 @@ resource "aws_s3_bucket" "response_logs_store" {
   bucket = "response-and-logs-store-bucket"
 
   tags = {
-    Name        = "response_logs_storage"
+    Name = "response_logs_storage"
   }
 }
 
-#Create IAM Role for Lambda
+# ---------------------------------
+# 2. CREATE IAM ROLE FOR LAMBDA
+# ---------------------------------
 resource "aws_iam_role" "lambda_execution_role" {
   name               = "LambdaExecutionRole"
   assume_role_policy = data.aws_iam_policy_document.lambda_assume_role_policy.json
@@ -42,30 +48,99 @@ data "aws_iam_policy_document" "lambda_assume_role_policy" {
   }
 }
 
-# Attach IAM Policy to the Role
-resource "aws_iam_policy" "lambda_s3_policy" {
-  name   = "LambdaS3AccessPolicy"
-  policy = data.aws_iam_policy_document.lambda_s3_access_policy.json
+# Attach IAM Policy to allow Lambda to access S3 and Translate
+resource "aws_iam_policy" "lambda_s3_translate_policy" {
+  name   = "LambdaS3TranslateAccessPolicy"
+  policy = data.aws_iam_policy_document.lambda_s3_translate_access_policy.json
 }
 
-data "aws_iam_policy_document" "lambda_s3_access_policy" {
+data "aws_iam_policy_document" "lambda_s3_translate_access_policy" {
   statement {
     actions = [
-      "s3:PutObject",
       "s3:GetObject",
-      "s3:DeleteObject",
+      "s3:PutObject",
       "s3:ListBucket"
     ]
     resources = [
-      aws_s3_bucket.request_store.arn,
-      "${aws_s3_bucket.request_store.arn}/*",
-      aws_s3_bucket.response_logs_store.arn,
-      "${aws_s3_bucket.response_logs_store.arn}/*"
+      "arn:aws:s3:::translation-request-bucket",
+      "arn:aws:s3:::translation-request-bucket/*",
+      "arn:aws:s3:::response-and-logs-store-bucket",
+      "arn:aws:s3:::response-and-logs-store-bucket/*"
     ]
+  }
+
+  statement {
+    actions = [
+      "translate:TranslateText"
+    ]
+    resources = ["*"]
   }
 }
 
+data "aws_iam_policy_document" "lambda_logging_policy" {
+  statement {
+    actions = [
+      "logs:CreateLogGroup",
+      "logs:CreateLogStream",
+      "logs:PutLogEvents"
+    ]
+    resources = ["arn:aws:logs:*:*:*"]
+  }
+}
+
+resource "aws_iam_policy" "lambda_logging" {
+  name   = "LambdaLoggingPolicy"
+  policy = data.aws_iam_policy_document.lambda_logging_policy.json
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_logging_attach" {
+  role       = aws_iam_role.lambda_execution_role.name
+  policy_arn = aws_iam_policy.lambda_logging.arn
+}
+
+
 resource "aws_iam_role_policy_attachment" "lambda_policy_attachment" {
   role       = aws_iam_role.lambda_execution_role.name
-  policy_arn = aws_iam_policy.lambda_s3_policy.arn
+  policy_arn = aws_iam_policy.lambda_s3_translate_policy.arn
+}
+
+# ---------------------------------
+# 3. CREATE AWS LAMBDA FUNCTION
+# ---------------------------------
+resource "aws_lambda_function" "translation_lambda" {
+  function_name    = "TranslationProcessor"
+  runtime         = "python3.9"
+  role            = aws_iam_role.lambda_execution_role.arn
+  handler         = "lambda_function.lambda_handler"
+  filename        = "lambda_function.zip"  # Ensure this file exists in your Terraform directory
+
+  environment {
+    variables = {
+      REQUEST_BUCKET  = aws_s3_bucket.request_store.bucket
+      RESPONSE_BUCKET = aws_s3_bucket.response_logs_store.bucket
+    }
+  }
+}
+
+# ---------------------------------
+# 4. ADD S3 EVENT TRIGGER FOR LAMBDA
+# ---------------------------------
+resource "aws_s3_bucket_notification" "translation_trigger" {
+  bucket = aws_s3_bucket.request_store.id
+
+  lambda_function {
+    lambda_function_arn = aws_lambda_function.translation_lambda.arn
+    events              = ["s3:ObjectCreated:*"]
+  }
+
+  depends_on = [aws_lambda_permission.allow_s3]
+}
+
+# Grant S3 permission to invoke Lambda
+resource "aws_lambda_permission" "allow_s3" {
+  statement_id  = "AllowS3Invoke"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.translation_lambda.function_name
+  principal     = "s3.amazonaws.com"
+  source_arn    = aws_s3_bucket.request_store.arn
 }
