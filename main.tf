@@ -62,10 +62,10 @@ data "aws_iam_policy_document" "lambda_s3_translate_access_policy" {
       "s3:ListBucket"
     ]
     resources = [
-      "arn:aws:s3:::translation-request-bucket",
-      "arn:aws:s3:::translation-request-bucket/*",
-      "arn:aws:s3:::response-and-logs-store-bucket",
-      "arn:aws:s3:::response-and-logs-store-bucket/*"
+      aws_s3_bucket.request_store.arn,
+      "${aws_s3_bucket.request_store.arn}/*",
+      aws_s3_bucket.response_logs_store.arn,
+      "${aws_s3_bucket.response_logs_store.arn}/*"
     ]
   }
 
@@ -98,7 +98,6 @@ resource "aws_iam_role_policy_attachment" "lambda_logging_attach" {
   policy_arn = aws_iam_policy.lambda_logging.arn
 }
 
-
 resource "aws_iam_role_policy_attachment" "lambda_policy_attachment" {
   role       = aws_iam_role.lambda_execution_role.name
   policy_arn = aws_iam_policy.lambda_s3_translate_policy.arn
@@ -112,7 +111,7 @@ resource "aws_lambda_function" "translation_lambda" {
   runtime         = "python3.9"
   role            = aws_iam_role.lambda_execution_role.arn
   handler         = "lambda_function.lambda_handler"
-  filename        = "lambda_function.zip"  # Ensure this file exists in your Terraform directory
+  filename        = "lambda_function.zip"
 
   environment {
     variables = {
@@ -123,24 +122,9 @@ resource "aws_lambda_function" "translation_lambda" {
 }
 
 # ---------------------------------
-# 4. ADD S3 EVENT TRIGGER FOR LAMBDA
+# LINK API GATEWAY FILE
 # ---------------------------------
-resource "aws_s3_bucket_notification" "translation_trigger" {
-  bucket = aws_s3_bucket.request_store.id
-
-  lambda_function {
-    lambda_function_arn = aws_lambda_function.translation_lambda.arn
-    events              = ["s3:ObjectCreated:*"]
-  }
-
-  depends_on = [aws_lambda_permission.allow_s3]
-}
-
-# Grant S3 permission to invoke Lambda
-resource "aws_lambda_permission" "allow_s3" {
-  statement_id  = "AllowS3Invoke"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.translation_lambda.function_name
-  principal     = "s3.amazonaws.com"
-  source_arn    = aws_s3_bucket.request_store.arn
+module "api_gateway" {
+  source = "./modules/api_gateway"  # Reference the API Gateway file
+  lambda_function_arn = aws_lambda_function.translation_lambda.arn
 }

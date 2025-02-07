@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AWS Translation App</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            padding: 20px;
+            background-color: #f4f4f4;
+            text-align: center;
+        }
+        textarea {
+            width: 80%;
+            height: 100px;
+            margin-bottom: 10px;
+        }
+        select, button {
+            padding: 10px;
+            margin: 5px;
+        }
+        #result {
+            font-size: 18px;
+            font-weight: bold;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>AWS Text Translator</h1>
+
+    <textarea id="inputText" placeholder="Enter text to translate..."></textarea><br>
+
+    <label>From:</label>
+    <select id="sourceLang">
+        <option value="en">English</option>
+        <option value="fr">French</option>
+        <option value="es">Spanish</option>
+        <option value="de">German</option>
+    </select>
+
+    <label>To:</label>
+    <select id="targetLang">
+        <option value="fr">French</option>
+        <option value="es">Spanish</option>
+        <option value="de">German</option>
+        <option value="en">English</option>
+    </select><br>
+
+    <button onclick="translateText()">Translate</button>
+
+    <h2 id="result"></h2>
+
+    <script>
+        const apiGatewayUrl = "https://your-api-id.execute-api.us-east-1.amazonaws.com/prod/translate"; // Replace with your API Gateway URL
+
+        async function translateText() {
+            const text = document.getElementById("inputText").value;
+            const sourceLang = document.getElementById("sourceLang").value;
+            const targetLang = document.getElementById("targetLang").value;
+
+            if (!text) {
+                alert("Please enter text to translate!");
+                return;
+            }
+
+            const requestBody = {
+                source_language: sourceLang,
+                target_language: targetLang,
+                text: text
+            };
+
+            try {
+                let response = await fetch(apiGatewayUrl, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(requestBody)
+                });
+
+                let data = await response.json();
+                document.getElementById("result").innerText = "Translated: " + data.translated_text;
+            } catch (error) {
+                console.error("Error:", error);
+                alert("Translation failed. Check console for errors.");
+            }
+        }
+    </script>
+
+</body>
+</html>
