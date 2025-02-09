@@ -1,0 +1,19 @@
+version: "3.8"
+
+services:
+  backend:
+    build: ./Backend
+    image: translation-backend
+    environment:
+      REQUEST_BUCKET: translation-request-bucket
+      RESPONSE_BUCKET: translation-response-bucket
+    ports:
+      - "9000:8080"
+
+  frontend:
+    build: ./Frontend
+    image: translation-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
