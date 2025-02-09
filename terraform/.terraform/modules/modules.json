@@ -1,0 +1,1 @@
+{"Modules":[{"Key":"","Source":"","Dir":"."},{"Key":"api_gateway","Source":"./api_gateway.tf","Dir":""},{"Key":"ecs","Source":"./ecs.tf","Dir":""},{"Key":"iam","Source":"./iam.tf","Dir":""},{"Key":"lambda","Source":"./lambda.tf","Dir":""},{"Key":"s3","Source":"./s3.tf","Dir":""}]}
