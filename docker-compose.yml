@@ -1,8 +1,0 @@
-version: "3.8"
-
-services:
-  frontend:
-    build: ./Frontend
-    image: translation-frontend
-    ports:
-      - "80:80"
