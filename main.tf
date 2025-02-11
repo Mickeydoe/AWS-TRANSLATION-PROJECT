@@ -39,17 +39,6 @@ resource "aws_iam_policy" "lambda_policy" {
   })
 }
 
-resource "aws_lambda_permission" "allow_api_gateway" {
-  statement_id  = "AllowAPIGatewayInvoke"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.translation_lambda.function_name
-  principal     = "apigateway.amazonaws.com"
-
-  source_arn = "${aws_api_gateway_rest_api.translation_api.execution_arn}/*/*"
-}
-
-
-
 # ATTACH POLICY TO LAMBDA ROLE
 resource "aws_iam_role_policy_attachment" "lambda_attachment" {
   role       = aws_iam_role.lambda_role.name
@@ -62,12 +51,21 @@ resource "aws_iam_role_policy_attachment" "lambda_attachment" {
 resource "aws_lambda_function" "translation_lambda" {
   function_name = "TranslationProcessor"
   role          = aws_iam_role.lambda_role.arn
-  runtime       = "python3.9"  # ✅ Now using a standard Python runtime
+  runtime       = "python3.9"
   handler       = "lambda_function.lambda_handler"
-  filename      = "lambda_function.zip"  # ✅ Lambda function packaged as a ZIP file
-
+  filename      = "lambda_function.zip"
   timeout       = 10
   memory_size   = 512
+}
+
+# ✅ FIX: ADD MISSING LAMBDA PERMISSION
+resource "aws_lambda_permission" "allow_api_gateway" {
+  statement_id  = "AllowAPIGatewayInvoke"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.translation_lambda.function_name
+  principal     = "apigateway.amazonaws.com"
+
+  source_arn = "${aws_api_gateway_rest_api.translation_api.execution_arn}/*/*"
 }
 
 # ----------------------------
@@ -77,7 +75,6 @@ resource "aws_api_gateway_rest_api" "translation_api" {
   name        = "TranslationAPI"
   description = "API for text translation"
 }
-
 
 resource "aws_api_gateway_resource" "translate_resource" {
   rest_api_id = aws_api_gateway_rest_api.translation_api.id
@@ -101,9 +98,62 @@ resource "aws_api_gateway_integration" "lambda_integration" {
   uri                     = aws_lambda_function.translation_lambda.invoke_arn
 }
 
+# ✅ CORS CONFIGURATION
+resource "aws_api_gateway_method" "cors_options" {
+  rest_api_id   = aws_api_gateway_rest_api.translation_api.id
+  resource_id   = aws_api_gateway_resource.translate_resource.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "cors_integration" {
+  rest_api_id             = aws_api_gateway_rest_api.translation_api.id
+  resource_id             = aws_api_gateway_resource.translate_resource.id
+  http_method             = aws_api_gateway_method.cors_options.http_method
+  type                    = "MOCK"
+  request_templates = {
+    "application/json" = <<EOT
+{
+  "statusCode": 200
+}
+EOT
+  }
+}
+
+resource "aws_api_gateway_method_response" "cors_method_response" {
+  rest_api_id = aws_api_gateway_rest_api.translation_api.id
+  resource_id = aws_api_gateway_resource.translate_resource.id
+  http_method = aws_api_gateway_method.cors_options.http_method
+  status_code = "200"
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Origin"  = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Headers" = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "cors_integration_response" {
+  rest_api_id = aws_api_gateway_rest_api.translation_api.id
+  resource_id = aws_api_gateway_resource.translate_resource.id
+  http_method = aws_api_gateway_method.cors_options.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET, POST, OPTIONS'"
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type, Authorization'"
+  }
+
+  depends_on = [aws_api_gateway_integration.cors_integration]
+}
+
+# ✅ DEPLOYMENT
 resource "aws_api_gateway_deployment" "translation_deployment" {
   rest_api_id = aws_api_gateway_rest_api.translation_api.id
-  depends_on  = [aws_api_gateway_integration.lambda_integration]
+  depends_on  = [
+    aws_api_gateway_integration.lambda_integration,
+    aws_api_gateway_integration.cors_integration
+  ]
 }
 
 resource "aws_api_gateway_stage" "translation_stage" {
@@ -112,77 +162,8 @@ resource "aws_api_gateway_stage" "translation_stage" {
   deployment_id = aws_api_gateway_deployment.translation_deployment.id
 }
 
-
-
 # ----------------------------
-# IAM ROLE FOR ECS TASK EXECUTION
-# ----------------------------
-resource "aws_iam_role" "ecs_execution_role" {
-  name = "ecsExecutionRole"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Principal = { Service = "ecs-tasks.amazonaws.com" }
-      Action = "sts:AssumeRole"
-    }]
-  })
-}
-
-# Attach AWS Managed Policy to Allow ECS to Pull Images from ECR
-resource "aws_iam_role_policy_attachment" "ecs_execution_role_policy" {
-  role       = aws_iam_role.ecs_execution_role.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
-}
-
-
-# ----------------------------
-# 4. DEPLOY FRONTEND WITH ECS (FARGATE)
-# ----------------------------
-resource "aws_ecs_cluster" "frontend_cluster" {
-  name = "translation-frontend-cluster"
-}
-
-resource "aws_ecs_task_definition" "frontend_task" {
-  family                   = "translation-frontend-task"
-  network_mode             = "awsvpc"
-  requires_compatibilities = ["FARGATE"]
-  execution_role_arn       = aws_iam_role.ecs_execution_role.arn
-  cpu                      = "256"
-  memory                   = "512"
-
-  container_definitions = jsonencode([
-    {
-      name      = "translation-frontend"
-      image     = "654654366333.dkr.ecr.us-east-1.amazonaws.com/translation-frontend:latest"  # Replace with your ECR URI
-      essential = true
-      portMappings = [
-        {
-          containerPort = 80
-          hostPort      = 80
-        }
-      ]
-    }
-  ])
-}
-
-resource "aws_ecs_service" "frontend_service" {
-  name            = "translation-frontend-service"
-  cluster         = aws_ecs_cluster.frontend_cluster.id
-  task_definition = aws_ecs_task_definition.frontend_task.arn
-  launch_type     = "FARGATE"
-  desired_count   = 1
-
-  network_configuration {
-    subnets         = ["subnet-04f67b02f05b456fa", "subnet-0d5deb68e3a796372"]  # Replace with actual subnet IDs
-    security_groups = ["sg-07b24e3a119273641"]  # Replace with actual security group ID
-    assign_public_ip = true
-  }
-}
-
-# ----------------------------
-# 5. OUTPUTS (PRINT USEFUL INFO)
+# 4. OUTPUTS
 # ----------------------------
 output "api_gateway_url" {
   description = "API Gateway Invoke URL"
