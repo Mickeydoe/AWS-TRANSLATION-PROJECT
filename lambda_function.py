@@ -15,7 +15,15 @@ def lambda_handler(event, context):
 
         # Validate input
         if not text or not source_lang or not target_lang:
-            return {"statusCode": 400, "body": json.dumps("Missing required parameters.")}
+            return {
+                "statusCode": 400,
+                "headers": {
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "POST, OPTIONS",
+                    "Access-Control-Allow-Headers": "Content-Type, Authorization"
+                },
+                "body": json.dumps("Missing required parameters.")
+            }
 
         # Perform translation
         translated_text = translate_client.translate_text(
@@ -24,12 +32,25 @@ def lambda_handler(event, context):
             TargetLanguageCode=target_lang
         )["TranslatedText"]
 
-        # Return translated text
+        # Return translated text with CORS headers
         return {
             "statusCode": 200,
+            "headers": {
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "POST, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type, Authorization"
+            },
             "body": json.dumps({"original_text": text, "translated_text": translated_text})
         }
     
     except Exception as e:
         print(f"Error: {str(e)}")
-        return {"statusCode": 500, "body": json.dumps("Translation failed")}
+        return {
+            "statusCode": 500,
+            "headers": {
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "POST, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type, Authorization"
+            },
+            "body": json.dumps("Translation failed")
+        }
