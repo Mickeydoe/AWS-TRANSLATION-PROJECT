@@ -12,6 +12,25 @@ provider "aws" {
 }
 
 # ----------------------------
+# 1. CREATE S3 BUCKETS
+# ----------------------------
+resource "aws_s3_bucket" "request_store" {
+  bucket = "translation-request-bucket"
+
+  tags = {
+    Name = "Translation Request Storage"
+  }
+}
+
+resource "aws_s3_bucket" "response_store" {
+  bucket = "translation-response-bucket"
+
+  tags = {
+    Name = "Translation Response Storage"
+  }
+}
+
+# ----------------------------
 # 1. IAM ROLE FOR LAMBDA
 # ----------------------------
 resource "aws_iam_role" "lambda_role" {
@@ -27,22 +46,40 @@ resource "aws_iam_role" "lambda_role" {
 }
 
 # IAM POLICY FOR LAMBDA ACCESS
-resource "aws_iam_policy" "lambda_policy" {
-  name   = "LambdaTranslatePolicy"
+resource "aws_iam_policy" "lambda_s3_policy" {
+  name   = "LambdaS3AccessPolicy"
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{
-      Action   = "translate:TranslateText"
-      Effect   = "Allow"
-      Resource = "*"
-    }]
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["s3:PutObject", "s3:GetObject"]
+        Resource = [
+          "${aws_s3_bucket.request_store.arn}/*",
+          "${aws_s3_bucket.response_store.arn}/*"
+        ]
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["s3:ListBucket"]
+        Resource = [
+          aws_s3_bucket.request_store.arn,
+          aws_s3_bucket.response_store.arn
+        ]
+      },
+      {
+        Effect   = "Allow"
+        Action   = "translate:TranslateText"
+        Resource = "*"
+      }
+    ]
   })
 }
 
 # ATTACH POLICY TO LAMBDA ROLE
 resource "aws_iam_role_policy_attachment" "lambda_attachment" {
   role       = aws_iam_role.lambda_role.name
-  policy_arn = aws_iam_policy.lambda_policy.arn
+  policy_arn = aws_iam_policy.lambda_s3_policy.arn
 }
 
 # ----------------------------
@@ -56,6 +93,13 @@ resource "aws_lambda_function" "translation_lambda" {
   filename      = "lambda_function.zip"
   timeout       = 10
   memory_size   = 512
+
+  environment {
+    variables = {
+      REQUEST_BUCKET  = aws_s3_bucket.request_store.bucket
+      RESPONSE_BUCKET = aws_s3_bucket.response_store.bucket
+    }
+  }
 }
 
 # ✅ FIX: ADD MISSING LAMBDA PERMISSION
@@ -168,4 +212,15 @@ resource "aws_api_gateway_stage" "translation_stage" {
 output "api_gateway_url" {
   description = "API Gateway Invoke URL"
   value       = "https://${aws_api_gateway_rest_api.translation_api.id}.execute-api.us-east-1.amazonaws.com/prod"
+}
+
+
+output "request_s3_bucket" {
+  description = "S3 Bucket for storing translation requests"
+  value       = aws_s3_bucket.request_store.bucket
+}
+
+output "response_s3_bucket" {
+  description = "S3 Bucket for storing translation responses"
+  value       = aws_s3_bucket.response_store.bucket
 }
