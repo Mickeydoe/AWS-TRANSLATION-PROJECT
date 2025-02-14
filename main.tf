@@ -102,7 +102,7 @@ resource "aws_lambda_function" "translation_lambda" {
   }
 }
 
-# ✅ FIX: ADD MISSING LAMBDA PERMISSION
+# ADD LAMBDA PERMISSION
 resource "aws_lambda_permission" "allow_api_gateway" {
   statement_id  = "AllowAPIGatewayInvoke"
   action        = "lambda:InvokeFunction"
@@ -142,7 +142,7 @@ resource "aws_api_gateway_integration" "lambda_integration" {
   uri                     = aws_lambda_function.translation_lambda.invoke_arn
 }
 
-# ✅ CORS CONFIGURATION
+# CORS CONFIGURATION
 resource "aws_api_gateway_method" "cors_options" {
   rest_api_id   = aws_api_gateway_rest_api.translation_api.id
   resource_id   = aws_api_gateway_resource.translate_resource.id
@@ -191,7 +191,7 @@ resource "aws_api_gateway_integration_response" "cors_integration_response" {
   depends_on = [aws_api_gateway_integration.cors_integration]
 }
 
-# ✅ DEPLOYMENT
+# DEPLOYMENT
 resource "aws_api_gateway_deployment" "translation_deployment" {
   rest_api_id = aws_api_gateway_rest_api.translation_api.id
   depends_on  = [
