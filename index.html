@@ -12,7 +12,7 @@
             margin: 20px;
             padding: 20px;
         }
-        textarea, select, button {
+        textarea, select, button, input {
             margin: 10px;
             padding: 10px;
             width: 80%;
@@ -46,34 +46,34 @@
         <option value="en">English</option>
     </select><br>
 
+    <input type="file" id="fileInput" accept=".txt">
     <button onclick="translateText()">Translate</button>
 
     <h2 id="result"></h2>
 
     <script>
-        const apiGatewayUrl = "https://zujcxnspfh.execute-api.us-east-1.amazonaws.com/prod/translate"; // Replace with your actual API Gateway URL
+        const apiGatewayUrl = "https://z6sy29skx1.execute-api.us-east-1.amazonaws.com/prod/translate"; // Replace with actual API Gateway URL
 
         async function translateText() {
             const text = document.getElementById("inputText").value;
             const sourceLang = document.getElementById("sourceLang").value;
             const targetLang = document.getElementById("targetLang").value;
+            const fileInput = document.getElementById("fileInput").files[0];
 
-            if (!text) {
-                alert("Please enter text to translate!");       
-                return;
+            let formData = new FormData();
+            formData.append("source_language", sourceLang);
+            formData.append("target_language", targetLang);
+
+            if (fileInput) {
+                formData.append("file", fileInput);
+            } else {
+                formData.append("text", text);
             }
-
-            const requestBody = {
-                text: text,
-                source_language: sourceLang,
-                target_language: targetLang
-            };
 
             try {
                 let response = await fetch(apiGatewayUrl, {
                     method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(requestBody)
+                    body: formData
                 });
 
                 let data = await response.json();

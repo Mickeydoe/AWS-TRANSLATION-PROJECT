@@ -118,6 +118,7 @@ resource "aws_lambda_permission" "allow_api_gateway" {
 resource "aws_api_gateway_rest_api" "translation_api" {
   name        = "TranslationAPI"
   description = "API for text translation"
+  binary_media_types = ["multipart/form-data", "application/octet-stream", "text/plain"]
 }
 
 resource "aws_api_gateway_resource" "translate_resource" {
@@ -131,6 +132,9 @@ resource "aws_api_gateway_method" "translate_post" {
   resource_id   = aws_api_gateway_resource.translate_resource.id
   http_method   = "POST"
   authorization = "NONE"
+  request_parameters = {
+    "method.request.header.Content-Type" = true
+  }
 }
 
 resource "aws_api_gateway_integration" "lambda_integration" {
@@ -205,6 +209,8 @@ resource "aws_api_gateway_stage" "translation_stage" {
   rest_api_id   = aws_api_gateway_rest_api.translation_api.id
   deployment_id = aws_api_gateway_deployment.translation_deployment.id
 }
+
+
 
 # ----------------------------
 # 4. OUTPUTS
